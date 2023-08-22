@@ -25,17 +25,19 @@ def predict():
         return jsonify({'error': 'No image provided'}), 400
     
     # Load and preprocess image
-    image = Image.open(request.files['image'].stream).resize((224, 224)) # Assuming the model takes 224x224 images
+    image = Image.open(request.files['image'].stream).resize((250, 250))
     image_arr = np.asarray(image) / 255.0  # Convert to numpy array and normalize
     image_arr = adjust_brightness_and_saturation(image_arr)
     image_arr = np.expand_dims(image_arr, axis=0)  # Expand dimensions for batch input
     
+    class_lables = ['disease1','disease2','disease3','healthy']
+
     # Predict
     predictions = model.predict(image_arr)
     predicted_class = np.argmax(predictions[0])
     confidence = predictions[0][predicted_class]
     
-    return jsonify({'class': str(predicted_class), 'confidence': str(confidence)})
+    return jsonify({'class': str(class_lables[predicted_class]), 'confidence': str(confidence)})
 
 if __name__ == '__main__':
     app.run(debug=True)
