@@ -3,6 +3,13 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 import io
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+cred = credentials.Certificate('rubber-test-2f1f0-firebase-adminsdk-bn1h9-689ef8a3d4.json')
+firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 app = Flask(__name__)
 
@@ -96,6 +103,62 @@ def sheet_predict():
     interpreter = None  # Clear the variable
 
     return jsonify({'class': str(sheet_class_labels[predicted_class]), 'confidence': str(confidence)})
+
+@app.route('/data', methods=['POST'])
+def create_data():
+    data = {
+        'id': request.json['id'],
+        'type': request.json['type'],
+        'class': request.json['class'],
+        'description': request.json['description']
+    }
+    db.collection('data').add(data)
+    return jsonify({'message': 'Data added successfully'}), 201
+
+@app.route('/data/<id>', methods=['GET'])
+def get_data(id):
+    doc = db.collection('data').document(id).get()
+    if doc.exists:
+        return jsonify(doc.to_dict()), 200
+    else:
+        return jsonify({'message': 'Data not found'}), 404
+
+@app.route('/data', methods=['GET'])
+def get_all_data():
+    docs = db.collection('data').stream()
+    response = []
+    for doc in docs:
+        response.append(doc.to_dict())
+    return jsonify(response), 200
+
+@app.route('/data/type/<data_type>/class/<int:data_class>', methods=['GET'])
+def get_data_by_type_and_class(data_type, data_class):
+    # Query Firestore based on type and class
+    docs = db.collection('data').where('type', '==', data_type).where('class', '==', data_class).stream()
+    
+    response = []
+    for doc in docs:
+        response.append(doc.to_dict())
+    
+    if response:
+        return jsonify(response), 200
+    else:
+        return jsonify({'message': 'No data found for given type and class'}), 404
+
+@app.route('/data/<id>', methods=['PUT'])
+def update_data(id):
+    data = {
+        'type': request.json['type'],
+        'class': request.json['class'],
+        'description': request.json['description']
+    }
+    db.collection('data').document(id).set(data, merge=True)
+    return jsonify({'message': 'Data updated successfully'}), 200
+
+@app.route('/data/<id>', methods=['DELETE'])
+def delete_data(id):
+    db.collection('data').document(id).delete()
+    return jsonify({'message': 'Data deleted successfully'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)

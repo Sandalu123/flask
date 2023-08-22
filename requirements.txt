@@ -12,3 +12,4 @@ tensorflow
 opencv-python
 seaborn
 scikit-learn
+firebase-admin
