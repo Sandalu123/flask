@@ -1,13 +1,17 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify,send_file
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-import io
+from io import BytesIO
 import firebase_admin
 from firebase_admin import credentials, firestore
+from werkzeug.utils import secure_filename
+import os
 
 cred = credentials.Certificate('rubber-test-2f1f0-firebase-adminsdk-bn1h9-689ef8a3d4.json')
 firebase_admin.initialize_app(cred)
+
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 
 db = firestore.client()
 
@@ -25,6 +29,9 @@ def adjust_brightness_and_saturation(image):
     image = tf.image.adjust_brightness(image, delta=0.2)
     image = tf.image.adjust_saturation(image, saturation_factor=1.2)
     return image
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/ping', methods=['GET'])
 def ping():
@@ -106,14 +113,52 @@ def sheet_predict():
 
 @app.route('/data', methods=['POST'])
 def create_data():
+    if 'image1' not in request.files or 'image2' not in request.files or 'image3' not in request.files:
+        return jsonify({'error': 'Image files not provided'}), 400
+
+    image1 = request.files['image1']
+    image2 = request.files['image2']
+    image3 = request.files['image3']
+
+    if not allowed_file(image1.filename) or not allowed_file(image2.filename) or not allowed_file(image3.filename):
+        return jsonify({'error': 'Invalid file type. Only images are allowed.'}), 400
+
+    image1_bytes = image1.read()
+    image2_bytes = image2.read()
+    image3_bytes = image3.read()
+
     data = {
         'id': request.json['id'],
         'type': request.json['type'],
         'class': request.json['class'],
-        'description': request.json['description']
+        'topic1': request.json['topic1'],
+        'description1': request.json['description1'],
+        'topic2': request.json['topic2'],
+        'description2': request.json['description2'],
+        'Images': {
+            'image1': image1_bytes,
+            'image2': image2_bytes,
+            'image3': image3_bytes
+        }
     }
+
     db.collection('data').add(data)
     return jsonify({'message': 'Data added successfully'}), 201
+
+@app.route('/data/images/<id>', methods=['GET'])
+def get_images_by_id(id):
+    doc_ref = db.collection('data').document(id)
+    doc = doc_ref.get()
+
+    if doc.exists:
+        images = doc.to_dict()['Images']
+
+        # For simplicity, I'm returning the first image as a response.
+        # You can modify this to return a zip of all images or handle it differently based on your needs.
+        image_data = images['image1']
+        return send_file(BytesIO(image_data), attachment_filename='image1.jpg', as_attachment=True)
+    else:
+        return jsonify({'message': 'Data not found'}), 404
 
 @app.route('/data/<id>', methods=['GET'])
 def get_data(id):
@@ -150,8 +195,34 @@ def update_data(id):
     data = {
         'type': request.json['type'],
         'class': request.json['class'],
-        'description': request.json['description']
+        'topic1': request.json['topic1'],
+        'description1': request.json['description1'],
+        'topic2': request.json['topic2'],
+        'description2': request.json['description2']
     }
+
+    # Handle image updates
+    if 'image1' in request.files:
+        image1 = request.files['image1']
+        if not allowed_file(image1.filename):
+            return jsonify({'error': 'Invalid file type for image1. Only images are allowed.'}), 400
+        image1_path = "path/to/" + secure_filename(image1.filename)
+        data['Images'][0] = image1_path
+
+    if 'image2' in request.files:
+        image2 = request.files['image2']
+        if not allowed_file(image2.filename):
+            return jsonify({'error': 'Invalid file type for image2. Only images are allowed.'}), 400
+        image2_path = "path/to/" + secure_filename(image2.filename)
+        data['Images'][1] = image2_path
+
+    if 'image3' in request.files:
+        image3 = request.files['image3']
+        if not allowed_file(image3.filename):
+            return jsonify({'error': 'Invalid file type for image3. Only images are allowed.'}), 400
+        image3_path = "path/to/" + secure_filename(image3.filename)
+        data['Images'][2] = image3_path
+
     db.collection('data').document(id).set(data, merge=True)
     return jsonify({'message': 'Data updated successfully'}), 200
 
