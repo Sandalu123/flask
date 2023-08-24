@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 import os
 import base64
 from PIL import Image
+from flask import render_template_string
 
 cred = credentials.Certificate('rubber-test-2f1f0-firebase-adminsdk-bn1h9-689ef8a3d4.json')
 firebase_admin.initialize_app(cred)
@@ -164,19 +165,64 @@ def create_data():
     db.collection('data').add(data)
     return jsonify({'message': 'Data added successfully'}), 201
 
-@app.route('/data/images/<id>', methods=['GET'])
-def get_images_by_id(id):
-    doc_ref = db.collection('data').document(id)
-    doc = doc_ref.get()
+@app.route('/data/images/<data_id>', methods=['GET'])
+def get_images_by_data_id(data_id):
+    # Query Firestore based on the 'id' field in the data
+    docs = db.collection('data').where('id', '==', data_id).stream()
 
-    if doc.exists:
-        images = doc.to_dict()['Images']
+    for doc in docs:  # This loop should only run once since 'id' should be unique
+        data = doc.to_dict()
+        image1_path = data['image1_path']
+        image2_path = data['image2_path']
+        image3_path = data['image3_path']
 
-        # Decode the base64 string to binary
-        image_data = base64.b64decode(images['image1'])
-        return send_file(BytesIO(image_data), attachment_filename='image1.jpg', as_attachment=True)
-    else:
-        return jsonify({'message': 'Data not found'}), 404
+        # Read the images and convert to base64 for embedding in HTML
+        with open(image1_path, "rb") as img_file:
+            image1_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+        
+        with open(image2_path, "rb") as img_file:
+            image2_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+        
+        with open(image3_path, "rb") as img_file:
+            image3_base64 = base64.b64encode(img_file.read()).decode('utf-8')
+
+        # Create a simple HTML page to display the images
+        template = """
+        <html>
+            <body>
+                <h2>Images for ID: {{id}}</h2>
+                <img src="data:image/jpeg;base64,{{image1}}" width="300px">
+                <img src="data:image/jpeg;base64,{{image2}}" width="300px">
+                <img src="data:image/jpeg;base64,{{image3}}" width="300px">
+            </body>
+        </html>
+        """
+
+        return render_template_string(template, id=data_id, image1=image1_base64, image2=image2_base64, image3=image3_base64)
+
+    return jsonify({'message': 'Data not found'}), 404
+
+@app.route('/data/images/<data_id>/<image_number>', methods=['GET'])
+def get_image_by_data_id(data_id, image_number):
+    # Query Firestore based on the 'id' field in the data
+    docs = db.collection('data').where('id', '==', data_id).stream()
+
+    for doc in docs:  # This loop should only run once since 'id' should be unique
+        data = doc.to_dict()
+
+        if str(image_number) == '1':
+            image_path = data['image1_path']
+        elif str(image_number) == '2':
+            image_path = data['image2_path']
+        elif str(image_number) == '3':
+            image_path = data['image3_path']
+        else:
+            return jsonify({'error': 'Invalid image number. Choose image1, image2, or image3.'}), 400
+
+        return send_file(image_path, mimetype='image/jpeg')
+
+    return jsonify({'message': 'Data not found'}), 404
+
 
 @app.route('/data/<id>', methods=['GET'])
 def get_data(id):
